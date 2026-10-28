@@ -1,0 +1,6 @@
+{
+  "appId": "fr.carnetdelieux.app",
+  "appName": "Carnet de lieux",
+  "webDir": "www",
+  "android": { "backgroundColor": "#f7f7f3" }
+}

@@ -1,0 +1,47 @@
+name: Compiler l'APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Installer les dépendances
+        run: npm install
+
+      - name: Préparer les fichiers web
+        run: |
+          mkdir -p www
+          cp index.html style.css app.js config.js sw.js manifest.webmanifest icon.svg icon-192.png icon-512.png www/
+
+      - name: Créer le projet Android
+        run: npx cap add android
+
+      - name: Générer les icônes
+        run: npx capacitor-assets generate --android --iconBackgroundColor '#1f4d3a' --iconBackgroundColorDark '#1f4d3a'
+
+      - name: Synchroniser
+        run: npx cap sync android
+
+      - name: Compiler l'APK
+        working-directory: android
+        run: ./gradlew assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: carnet-de-lieux-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
