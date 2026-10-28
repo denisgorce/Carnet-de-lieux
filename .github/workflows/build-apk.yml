@@ -32,7 +32,16 @@ jobs:
         run: npx cap add android
 
       - name: Générer les icônes
-        run: npx capacitor-assets generate --android --iconBackgroundColor '#1f4d3a' --iconBackgroundColorDark '#1f4d3a'
+        run: npx capacitor-assets generate --android
+
+      - name: Sécuriser l'icône adaptative
+        run: |
+          RES=android/app/src/main/res
+          if ! ls $RES/mipmap-*/ic_launcher_background.png >/dev/null 2>&1; then
+            echo "Fond d'icône absent : utilisation d'une couleur unie"
+            sed -i 's#@mipmap/ic_launcher_background#@color/ic_launcher_background#' $RES/mipmap-anydpi-v26/ic_launcher.xml $RES/mipmap-anydpi-v26/ic_launcher_round.xml
+            printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">#1f4d3a</color>\n</resources>\n' > $RES/values/ic_launcher_background.xml
+          fi
 
       - name: Synchroniser
         run: npx cap sync android
