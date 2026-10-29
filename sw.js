@@ -1,4 +1,4 @@
-const V='carnet-v4';
+const V='carnet-v5';
 const SHELL=['./','index.html','style.css','app.js','config.js','manifest.webmanifest','icon.svg','icon-192.png'];
 const CACHEABLE=['unpkg.com','cdn.jsdelivr.net','tile.openstreetmap.org'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(V).then(c=>Promise.all(SHELL.map(u=>c.add(u).catch(()=>{})))).then(()=>self.skipWaiting()))});

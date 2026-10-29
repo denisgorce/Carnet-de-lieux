@@ -22,13 +22,14 @@ const IC={
   copy:'<rect x="9" y="9" width="12" height="12" rx="3"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/>',
   out:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
   down:'<path d="M12 3v12m0 0-4-4m4 4 4-4M4 21h16"/>',
-  filter:'<path d="M3 5h18M6 12h12M10 19h4"/>'
+  filter:'<path d="M3 5h18M6 12h12M10 19h4"/>',
+  search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>'
 };
 const I=(n,c='')=>`<svg class="ic ${c}" viewBox="0 0 24 24" aria-hidden="true">${IC[n]}</svg>`;
 
 const CATS={restaurant:['Restaurant','🍽️','#e8590c'],nature:['Nature','🌿','#2f9e44'],culture:['Culture','🏛️','#7048e8'],plage:['Plage','🏖️','#1c7ed6'],ville:['Ville','🏙️','#495057'],hebergement:['Hébergement','🛏️','#d6336c'],autre:['Autre','📍','#0b7285']};
 const cat=k=>CATS[k]||CATS.autre;
-const TL={city:'Ville',town:'Ville',village:'Commune',municipality:'Commune',hamlet:'Hameau',suburb:'Quartier',county:'Département',state:'Région',region:'Région',country:'Pays',administrative:'Territoire',postcode:'Code postal',island:'Île'};
+const TL={city:'Ville',town:'Ville',village:'Commune',municipality:'Commune',hamlet:'Hameau',suburb:'Quartier',county:'Département',state:'Région',region:'Région',country:'Pays',administrative:'Territoire',postcode:'Code postal',island:'Île',restaurant:'Restaurant',cafe:'Café',bar:'Bar',museum:'Musée',attraction:'Site',hotel:'Hôtel',monument:'Monument',castle:'Château',beach:'Plage',peak:'Sommet',park:'Parc',place_of_worship:'Lieu de culte',house:'Adresse',road:'Rue',residential:'Rue',building:'Bâtiment',viewpoint:'Point de vue',church:'Église'};
 
 /* ---------- géométrie ---------- */
 const km=(a,b)=>{const r=Math.PI/180,R=6371,dA=(b[0]-a[0])*r,dO=(b[1]-a[1])*r,x=Math.sin(dA/2)**2+Math.cos(a[0]*r)*Math.cos(b[0]*r)*Math.sin(dO/2)**2;return 2*R*Math.asin(Math.sqrt(x))};
@@ -346,11 +347,31 @@ function showPlace(id,fly){
   });
 }
 
+/* ---------- recherche d'adresse ou de lieu connu ---------- */
+const searchBox=id=>`<form class="inl" id="${id}f"><input type="search" class="f" id="${id}q" placeholder="Adresse, restaurant, monument…" autocomplete="off" aria-label="Rechercher une adresse ou un lieu connu"><button class="b p" aria-label="Rechercher">${I('search')}</button></form><div id="${id}r"></div>`;
+function bindSearch(id,onPick){
+  $('#'+id+'f').onsubmit=async e=>{
+    e.preventDefault();const q=$('#'+id+'q').value.trim();if(!q)return;
+    const out=$('#'+id+'r');out.innerHTML='<div class="item sk" style="height:60px"></div>';
+    try{
+      const prm={q,format:'jsonv2',limit:6,'accept-language':'fr'};
+      if(map.getZoom()>=7){const b=map.getBounds();prm.viewbox=[b.getWest(),b.getNorth(),b.getEast(),b.getSouth()].join(',')}
+      const res=await(await fetch('https://nominatim.openstreetmap.org/search?'+new URLSearchParams(prm))).json();
+      if(!res.length){out.innerHTML='<p class="meta">Aucun résultat. Précisez avec la ville, par exemple « Musée d’Orsay Paris ».</p>';return}
+      out.innerHTML=res.map((x,i)=>{const t=TL[x.addresstype]||TL[x.type]||'';return `<button type="button" class="item" data-i="${i}">${I('pin')}<div><b>${esc(x.name||x.display_name.split(',')[0])}</b><small>${esc(x.display_name)}</small></div>${t?`<em>${esc(t)}</em>`:''}</button>`}).join('');
+      $$('#'+id+'r .item').forEach(b=>b.onclick=()=>{tap();const x=res[+b.dataset.i];onPick({lat:+x.lat,lng:+x.lon,name:x.name||x.display_name.split(',')[0]})});
+    }catch{out.innerHTML='<p class="meta">Recherche impossible : vérifiez votre connexion.</p>'}
+  };
+}
+
 /* ---------- lieu : formulaire ---------- */
 const newPlace=ll=>({id:crypto.randomUUID(),lat:ll.lat,lng:ll.lng,title:'',date:today(),desc:'',photos:[],cat:'autre',fav:false});
 function showAdd(){
-  setSheet(`<h2>Ajouter un lieu</h2><p class="meta">Où se trouve ce lieu ?</p>
-  <div class="stack"><button class="b p" id="aMap">${I('pin')} Choisir sur la carte</button><button class="b" id="aLoc">${I('locate')} Ma position actuelle</button></div>`);
+  setSheet(`<h2>Ajouter un lieu</h2><p class="meta">Cherchez une adresse ou un lieu connu, ou placez-le vous-même.</p>
+  ${searchBox('as')}
+  <label>Ou</label>
+  <div class="stack"><button class="b" id="aMap">${I('pin')} Choisir sur la carte</button><button class="b" id="aLoc">${I('locate')} Ma position actuelle</button></div>`);
+  bindSearch('as',r=>{const p=newPlace({lat:r.lat,lng:r.lng});p.title=r.name;map.setView([r.lat,r.lng],16,{animate:false});showForm(p)});
   on('#aMap',()=>{closeSheet();pick='add';toast('Touchez la carte pour placer le lieu',4000)});
   on('#aLoc',()=>locate(ll=>showForm(newPlace({lat:ll[0],lng:ll[1]}))));
 }
@@ -370,6 +391,7 @@ function showForm(p){
     <label for="s">Descriptif</label><textarea id="s" placeholder="Souvenirs, conseils, ambiance…">${esc(draft.desc)}</textarea>
     <label>Photos</label><div class="strip"><label class="addph" for="f">${I('plus')}<span>Photos</span></label>${thumbs}</div>
     <input type="file" id="f" accept="image/*" multiple hidden>
+    <label>Position sur la carte</label>${searchBox('fs')}
     <button type="button" class="b link" id="here">${I('locate')} Utiliser ma position</button>
     <div class="fbar"><button class="b" id="no">Annuler</button><button class="b p" id="ok">Enregistrer</button></div>`,'','form');
     $('#t').oninput=e=>draft.title=e.target.value;$('#d').oninput=e=>draft.date=e.target.value;$('#s').oninput=e=>draft.desc=e.target.value;
@@ -384,6 +406,7 @@ function showForm(p){
     $('#ok').onclick=save;
     $('#no').onclick=()=>isNew?closeSheet():showPlace(draft.id);
     $('#here').onclick=()=>locate(ll=>{draft.lat=ll[0];draft.lng=ll[1];draftMarker.setLatLng(ll);map.setView(ll,16)});
+    bindSearch('fs',r=>{draft.lat=r.lat;draft.lng=r.lng;draftMarker.setLatLng([r.lat,r.lng]);map.setView([r.lat,r.lng],16,{animate:false});lift([r.lat,r.lng]);if(!draft.title.trim()){draft.title=r.name;$('#t').value=r.name}$('#fsr').innerHTML='';toast('Position mise à jour')});
   };
   draw();lift([p.lat,p.lng]);
 
