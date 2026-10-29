@@ -7,8 +7,8 @@ descriptif, photos), stockés en ligne et partageables en lecture seule via un l
 1. Créez un projet sur supabase.com.
 2. SQL Editor → collez `supabase.sql` → Run. (Installation déjà faite avec la version précédente ? Lancez plutôt `supabase-update.sql`.)
 3. Project Settings → API : copiez l'URL et la clé « anon / publishable » dans `config.js`.
-4. Authentication → Email Templates : dans « Confirm signup » ET « Magic Link », ajoutez une ligne
-   `<p>Votre code de connexion : {{ .Token }}</p>`. L'application demande ce code.
+4. Authentication → Sign In / Providers → Email : désactivez « Confirm email » (l'application utilise un
+   e-mail et un mot de passe, sans e-mail de confirmation).
 5. Authentication → URL Configuration : « Site URL » = votre adresse GitHub Pages.
 
 ## 2. Dépôt GitHub
@@ -30,6 +30,8 @@ descriptif, photos), stockés en ligne et partageables en lecture seule via un l
 - Export GeoJSON, mode sombre automatique, partage en lecture seule.
 
 ## Utilisation
-- Connexion : e-mail, puis code reçu par courrier.
+- Première fois : « Créer un compte » (e-mail + mot de passe). Ensuite : « Se connecter ».
+- Une fois votre compte créé, désactivez « Allow new users to sign up » (Authentication → Sign In / Providers)
+  pour empêcher quiconque d'autre de créer un compte sur votre projet.
 - « Mes lieux » → « Envoyer le lien » : vos amis ouvrent le carnet en lecture seule dans leur navigateur, sans compte.
 - « Nouveau lien » invalide l'ancien lien de partage.

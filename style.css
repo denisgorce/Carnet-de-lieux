@@ -146,8 +146,8 @@ h3{font-size:16px;font-weight:750;margin:24px 0 6px}
 
 /* ---- formulaires ---- */
 label{display:block;font-weight:700;font-size:13px;color:var(--mute);margin:16px 0 7px;letter-spacing:.01em}
-input[type=text],input[type=email],input[type=search].f,input[type=date],textarea{width:100%;font:inherit;padding:14px 15px;border:1.5px solid transparent;border-radius:16px;background:var(--sf2);color:var(--ink);transition:border-color .15s,background .15s}
-input[type=text]:focus,input[type=email]:focus,input[type=search].f:focus,input[type=date]:focus,textarea:focus{outline:0;border-color:var(--brand);background:var(--sf)}
+input[type=text],input[type=email],input[type=password],input[type=search].f,input[type=date],textarea{width:100%;font:inherit;padding:14px 15px;border:1.5px solid transparent;border-radius:16px;background:var(--sf2);color:var(--ink);transition:border-color .15s,background .15s}
+input[type=text]:focus,input[type=email]:focus,input[type=password]:focus,input[type=search].f:focus,input[type=date]:focus,textarea:focus{outline:0;border-color:var(--brand);background:var(--sf)}
 textarea{min-height:104px;resize:vertical}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chips.scroll{flex-wrap:nowrap;overflow-x:auto;margin:0 -18px;padding:2px 18px;scrollbar-width:none}

@@ -209,29 +209,28 @@ $('#lb .prev').onclick=e=>{e.stopPropagation();lbMove(-1)};$('#lb .next').onclic
 $('#lb').onclick=e=>{if(e.target.id==='lb')$('#lb').classList.remove('on')};
 (()=>{let x0=0;const lb=$('#lb');lb.addEventListener('touchstart',e=>x0=e.touches[0].clientX,{passive:true});lb.addEventListener('touchend',e=>{const d=e.changedTouches[0].clientX-x0;if(Math.abs(d)>60&&lbList.length>1)lbMove(d<0?1:-1)})})();
 
-/* ---------- connexion ---------- */
+/* ---------- connexion (e-mail + mot de passe) ---------- */
+let authMode='in',lastEmail='';
 function showLogin(){
-  setSheet(`<h2>Connexion</h2><p class="meta">Entrez votre e-mail : vous recevrez un code de connexion, sans mot de passe.</p>
-  <label for="em">Adresse e-mail</label><input type="email" id="em" autocomplete="email" inputmode="email" placeholder="vous@exemple.fr">
-  <div class="fbar"><button class="b p" id="go">Recevoir le code</button></div>`,'','form');
-  on('#go',async()=>{
-    const email=$('#em').value.trim();if(!email)return toast('Saisissez votre adresse e-mail');
-    const b=$('#go');b.disabled=true;b.textContent='Envoi…';
-    const {error}=await sb.auth.signInWithOtp({email,options:{emailRedirectTo:BASE}});
-    if(error){b.disabled=false;b.textContent='Recevoir le code';return toast(error.message,5000)}
-    showCode(email);
-  });
-}
-function showCode(email){
-  setSheet(`<h2>Saisissez le code reçu</h2><p class="meta">Un e-mail vient d’être envoyé à ${esc(email)}. Recopiez le code qu’il contient.</p>
-  <label for="cd">Code de connexion</label><input type="text" id="cd" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="Code">
-  <div class="fbar"><button class="b" id="bk">Changer d’adresse</button><button class="b p" id="vf">Valider</button></div>`,'','form');
-  on('#vf',async()=>{
-    const t=$('#cd').value.trim();if(!t)return toast('Saisissez le code');
-    const {error}=await sb.auth.verifyOtp({email,token:t,type:'email'});
-    if(error)toast('Code invalide ou expiré',4000);
-  });
-  on('#bk',showLogin);
+  const up=authMode==='up';
+  setSheet(`<h2>${up?'Créer mon compte':'Connexion'}</h2><p class="meta">${up?'Choisissez un mot de passe d’au moins 8 caractères.':'Connectez-vous avec votre e-mail et votre mot de passe.'}</p>
+  <div class="seg" data-m="${up?'r':'t'}"><i></i><button type="button" data-a="in" class="${up?'':'on'}">Se connecter</button><button type="button" data-a="up" class="${up?'on':''}">Créer un compte</button></div>
+  <label for="em">Adresse e-mail</label><input type="email" id="em" value="${esc(lastEmail)}" autocomplete="email" inputmode="email" placeholder="vous@exemple.fr">
+  <label for="pw">Mot de passe</label><input type="password" id="pw" autocomplete="${up?'new-password':'current-password'}" placeholder="••••••••">
+  <div class="fbar"><button class="b p" id="go">${up?'Créer le compte':'Se connecter'}</button></div>`,'','form');
+  $('#em').oninput=e=>lastEmail=e.target.value;
+  $$('.seg button').forEach(x=>x.onclick=()=>{authMode=x.dataset.a;showLogin()});
+  const submit=async()=>{
+    const email=$('#em').value.trim(),password=$('#pw').value;
+    if(!email||!password)return toast('Saisissez votre e-mail et votre mot de passe');
+    if(up&&password.length<8)return toast('Le mot de passe doit faire au moins 8 caractères');
+    const btn=$('#go');btn.disabled=true;
+    const r=up?await sb.auth.signUp({email,password,options:{emailRedirectTo:BASE}}):await sb.auth.signInWithPassword({email,password});
+    btn.disabled=false;
+    if(r.error)return toast(/invalid login/i.test(r.error.message)?'E-mail ou mot de passe incorrect':r.error.message,5000);
+    if(up&&!r.data.session)toast('Compte créé. Confirmez votre adresse avec le lien reçu par e-mail, puis connectez-vous.',7000);
+  };
+  on('#go',submit);$('#pw').onkeydown=e=>{if(e.key==='Enter')submit()};
 }
 
 /* ---------- compte ---------- */
