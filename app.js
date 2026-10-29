@@ -348,30 +348,100 @@ function showPlace(id,fly){
 }
 
 /* ---------- recherche d'adresse ou de lieu connu ---------- */
-const searchBox=id=>`<form class="inl" id="${id}f"><input type="search" class="f" id="${id}q" placeholder="Adresse, restaurant, monument…" autocomplete="off" aria-label="Rechercher une adresse ou un lieu connu"><button class="b p" aria-label="Rechercher">${I('search')}</button></form><div id="${id}r"></div>`;
+const SKL='<div class="item sk" style="height:60px"></div>';
+const guessCat=(k,v)=>{
+  if(['restaurant','cafe','bar','pub','fast_food','biergarten','ice_cream','food_court'].includes(v))return 'restaurant';
+  if(['hotel','guest_house','hostel','motel','apartment','camp_site','chalet'].includes(v))return 'hebergement';
+  if(v==='beach')return 'plage';
+  if(k==='historic'||['museum','gallery','attraction','artwork','theatre','cinema','arts_centre','place_of_worship','castle','monument'].includes(v))return 'culture';
+  if(k==='natural'||k==='leisure'||['peak','park','nature_reserve','viewpoint','forest','garden','waterfall'].includes(v))return 'nature';
+  if(k==='place')return 'ville';
+  return 'autre';
+};
+const searchBox=id=>`<form class="inl" id="${id}f"><input type="search" class="f" id="${id}q" placeholder="Restaurant, monument, adresse…" autocomplete="off" aria-label="Rechercher une adresse ou un lieu connu"><button class="b p" aria-label="Rechercher">${I('search')}</button></form><div id="${id}r"></div>`;
+/* Photon : moteur OpenStreetMap tolérant aux fautes, pensé pour la saisie en direct, favorise les résultats proches de la carte */
+async function photon(q){
+  const c=map.getCenter();
+  const prm=new URLSearchParams({q,limit:8,lang:'fr',lat:c.lat,lon:c.lng,zoom:Math.max(6,Math.min(16,Math.round(map.getZoom()))),location_bias_scale:.3});
+  const r=await fetch('https://photon.komoot.io/api/?'+prm);if(!r.ok)throw new Error('photon');
+  const j=await r.json();
+  return (j.features||[]).map(f=>{
+    const p=f.properties||{},[lng,lat]=f.geometry.coordinates;
+    const street=[p.housenumber,p.street].filter(Boolean).join(' ');
+    const town=[p.postcode,p.city||p.town||p.village||p.county].filter(Boolean).join(' ');
+    return {name:p.name||street||p.city||'Lieu',lat,lng,sub:[p.name&&street?street:'',town,p.state,p.country].filter(Boolean).join(', '),type:TL[p.osm_value]||'',cat:guessCat(p.osm_key,p.osm_value)};
+  });
+}
+async function nomi(q){
+  const r=await fetch('https://nominatim.openstreetmap.org/search?'+new URLSearchParams({q,format:'jsonv2',limit:6,'accept-language':'fr'}));
+  if(!r.ok)throw new Error('nominatim');
+  return (await r.json()).map(x=>({name:x.name||x.display_name.split(',')[0],lat:+x.lat,lng:+x.lon,sub:x.display_name,type:TL[x.addresstype]||TL[x.type]||'',cat:guessCat(x.category,x.type)}));
+}
+/* Overpass : tous les lieux d'une catégorie autour d'un point */
+const NEAR=[
+  ['Restaurant','🍽️','["amenity"="restaurant"]','restaurant'],['Café','☕','["amenity"="cafe"]','restaurant'],['Bar','🍺','["amenity"~"^(bar|pub)$"]','restaurant'],
+  ['Musée','🏛️','["tourism"="museum"]','culture'],['Monument','🗽','["historic"~"^(monument|castle|memorial|ruins|archaeological_site)$"]','culture'],['À voir','⭐','["tourism"~"^(attraction|viewpoint)$"]','culture'],
+  ['Hôtel','🛏️','["tourism"~"^(hotel|guest_house|hostel)$"]','hebergement'],['Plage','🏖️','["natural"="beach"]','plage'],['Parc','🌳','["leisure"~"^(park|garden)$"]','nature']
+];
+async function overpass(i,c,R){
+  const ct=NEAR[i][3],q=`[out:json][timeout:15];nwr(around:${R},${c.lat},${c.lng})${NEAR[i][2]}["name"];out center 80;`;
+  const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),18000);
+  try{
+    const r=await fetch('https://overpass-api.de/api/interpreter?data='+encodeURIComponent(q),{signal:ctl.signal});
+    if(!r.ok)throw new Error('overpass');
+    const seen=new Set();
+    return (await r.json()).elements.map(e=>{
+      const t=e.tags||{},lat=e.lat??e.center?.lat,lng=e.lon??e.center?.lon;if(lat==null)return null;
+      const key=t.name+lat.toFixed(3)+lng.toFixed(3);if(seen.has(key))return null;seen.add(key);
+      const d=km([c.lat,c.lng],[lat,lng]),addr=[t['addr:housenumber'],t['addr:street']].filter(Boolean).join(' ');
+      return {name:t.name,lat,lng,d,sub:[fmtD(d),addr||(t.cuisine||'').replaceAll(';',', ')].filter(Boolean).join(' · '),type:'',cat:ct};
+    }).filter(Boolean).sort((x,y)=>x.d-y.d).slice(0,25);
+  }finally{clearTimeout(to)}
+}
+function listInto(out,l,onPick,empty){
+  if(!l.length){out.innerHTML=`<p class="meta">${empty}</p>`;return}
+  out.innerHTML=l.map((x,i)=>`<button type="button" class="item" data-i="${i}">${I('pin')}<div><b>${esc(x.name)}</b><small>${esc(x.sub)}</small></div>${x.type?`<em>${esc(x.type)}</em>`:''}</button>`).join('');
+  $$('.item',out).forEach(b=>b.onclick=()=>{tap();onPick(l[+b.dataset.i])});
+}
+/* saisie en direct (Photon) ; à la validation, Nominatim complète les résultats */
 function bindSearch(id,onPick){
-  $('#'+id+'f').onsubmit=async e=>{
-    e.preventDefault();const q=$('#'+id+'q').value.trim();if(!q)return;
-    const out=$('#'+id+'r');out.innerHTML='<div class="item sk" style="height:60px"></div>';
-    try{
-      const prm={q,format:'jsonv2',limit:6,'accept-language':'fr'};
-      if(map.getZoom()>=7){const b=map.getBounds();prm.viewbox=[b.getWest(),b.getNorth(),b.getEast(),b.getSouth()].join(',')}
-      const res=await(await fetch('https://nominatim.openstreetmap.org/search?'+new URLSearchParams(prm))).json();
-      if(!res.length){out.innerHTML='<p class="meta">Aucun résultat. Précisez avec la ville, par exemple « Musée d’Orsay Paris ».</p>';return}
-      out.innerHTML=res.map((x,i)=>{const t=TL[x.addresstype]||TL[x.type]||'';return `<button type="button" class="item" data-i="${i}">${I('pin')}<div><b>${esc(x.name||x.display_name.split(',')[0])}</b><small>${esc(x.display_name)}</small></div>${t?`<em>${esc(t)}</em>`:''}</button>`}).join('');
-      $$('#'+id+'r .item').forEach(b=>b.onclick=()=>{tap();const x=res[+b.dataset.i];onPick({lat:+x.lat,lng:+x.lon,name:x.name||x.display_name.split(',')[0]})});
-    }catch{out.innerHTML='<p class="meta">Recherche impossible : vérifiez votre connexion.</p>'}
+  const out=$('#'+id+'r'),inp=$('#'+id+'q');let seq=0,t;
+  const run=async full=>{
+    const q=inp.value.trim();if(q.length<2){out.innerHTML='';return}
+    const my=++seq;out.innerHTML=SKL;let l=[],fail=0;
+    try{l=await photon(q)}catch{fail++}
+    if(full||!l.length){
+      try{const seen=new Set(l.map(x=>x.lat.toFixed(4)+x.lng.toFixed(4)));(await nomi(q)).forEach(x=>{const k=x.lat.toFixed(4)+x.lng.toFixed(4);if(!seen.has(k)){seen.add(k);l.push(x)}})}catch{fail++}
+    }
+    if(my!==seq)return;
+    listInto(out,l.slice(0,10),onPick,fail>=2?'Recherche impossible : vérifiez votre connexion.':'Aucun résultat. Essayez un autre mot, ou ajoutez la ville (« Café de Flore Paris »).');
   };
+  inp.oninput=()=>{clearTimeout(t);t=setTimeout(()=>run(false),450)};
+  $('#'+id+'f').onsubmit=e=>{e.preventDefault();clearTimeout(t);run(true)};
 }
 
 /* ---------- lieu : formulaire ---------- */
 const newPlace=ll=>({id:crypto.randomUUID(),lat:ll.lat,lng:ll.lng,title:'',date:today(),desc:'',photos:[],cat:'autre',fav:false});
+let nearMe=false;
 function showAdd(){
-  setSheet(`<h2>Ajouter un lieu</h2><p class="meta">Cherchez une adresse ou un lieu connu, ou placez-le vous-même.</p>
+  const pickAdd=r=>{const p=newPlace({lat:r.lat,lng:r.lng});p.title=r.name;p.cat=r.cat||'autre';map.setView([r.lat,r.lng],16,{animate:false});showForm(p)};
+  setSheet(`<h2>Ajouter un lieu</h2><p class="meta">Cherchez un lieu connu ou une adresse, ou parcourez les lieux à proximité.</p>
   ${searchBox('as')}
+  <label>À proximité</label>
+  <div class="seg" id="ns" data-m="${nearMe?'r':'t'}"><i></i><button type="button" data-n="0" class="${nearMe?'':'on'}">Centre de la carte</button><button type="button" data-n="1" class="${nearMe?'on':''}">Autour de moi</button></div>
+  <div class="chips scroll" id="nc">${NEAR.map(([n,e],i)=>`<button type="button" class="chip" data-i="${i}">${e} ${n}</button>`).join('')}</div>
+  <div id="nr"></div>
   <label>Ou</label>
   <div class="stack"><button class="b" id="aMap">${I('pin')} Choisir sur la carte</button><button class="b" id="aLoc">${I('locate')} Ma position actuelle</button></div>`);
-  bindSearch('as',r=>{const p=newPlace({lat:r.lat,lng:r.lng});p.title=r.name;map.setView([r.lat,r.lng],16,{animate:false});showForm(p)});
+  bindSearch('as',pickAdd);
+  $$('#ns button').forEach(b=>b.onclick=()=>{nearMe=b.dataset.n==='1';$('#ns').dataset.m=nearMe?'r':'t';$$('#ns button').forEach(x=>x.classList.toggle('on',x===b))});
+  $$('#nc .chip').forEach(b=>b.onclick=()=>{
+    tap();$$('#nc .chip').forEach(x=>x.classList.toggle('on',x===b));
+    const out=$('#nr'),i=+b.dataset.i;
+    const run=async(c,R)=>{out.innerHTML=SKL+SKL;try{listInto(out,await overpass(i,c,R),pickAdd,'Aucun résultat à proximité. Déplacez la carte vers une autre zone, puis réessayez.')}catch{out.innerHTML='<p class="meta">Service indisponible pour le moment. Réessayez dans un instant.</p>'}};
+    if(nearMe){out.innerHTML='';locate(p=>run({lat:p[0],lng:p[1]},1500))}
+    else{const c=map.getCenter(),bd=map.getBounds();run(c,Math.round(Math.max(500,Math.min(5000,c.distanceTo(bd.getNorthEast())*.7))))}
+  });
   on('#aMap',()=>{closeSheet();pick='add';toast('Touchez la carte pour placer le lieu',4000)});
   on('#aLoc',()=>locate(ll=>showForm(newPlace({lat:ll[0],lng:ll[1]}))));
 }
@@ -406,7 +476,7 @@ function showForm(p){
     $('#ok').onclick=save;
     $('#no').onclick=()=>isNew?closeSheet():showPlace(draft.id);
     $('#here').onclick=()=>locate(ll=>{draft.lat=ll[0];draft.lng=ll[1];draftMarker.setLatLng(ll);map.setView(ll,16)});
-    bindSearch('fs',r=>{draft.lat=r.lat;draft.lng=r.lng;draftMarker.setLatLng([r.lat,r.lng]);map.setView([r.lat,r.lng],16,{animate:false});lift([r.lat,r.lng]);if(!draft.title.trim()){draft.title=r.name;$('#t').value=r.name}$('#fsr').innerHTML='';toast('Position mise à jour')});
+    bindSearch('fs',r=>{draft.lat=r.lat;draft.lng=r.lng;draftMarker.setLatLng([r.lat,r.lng]);map.setView([r.lat,r.lng],16,{animate:false});lift([r.lat,r.lng]);if(!draft.title.trim()){draft.title=r.name;$('#t').value=r.name}if(draft.cat==='autre'&&r.cat&&r.cat!=='autre'){draft.cat=r.cat;$$('#cc .chip').forEach(c=>c.classList.toggle('on',c.dataset.k===r.cat));draftMarker.setIcon(pinIcon(draft.cat,'draft'))}$('#fsr').innerHTML='';toast('Position mise à jour')});
   };
   draw();lift([p.lat,p.lng]);
 
